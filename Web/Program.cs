@@ -1,5 +1,3 @@
-using Microsoft.AspNetCore.Components;
-using Microsoft.AspNetCore.Components.Web;
 using Miaocrosoft.GPT.Data;
 using Azure.AI.OpenAI;
 

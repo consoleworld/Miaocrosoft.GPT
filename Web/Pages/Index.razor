@@ -7,7 +7,7 @@
 
 <h1>Hello, world!</h1>
 
-Welcome to your new app.
+Welcome to your GPT.
 <table>
     <tbody>
         @foreach (var item in ChatMessage)
@@ -29,29 +29,51 @@ Welcome to your new app.
                 </td>
             </tr>
         }
+        @if (Loading)
+        {
+            <tr>
+                <td colspan="2">Loading...</td>
+            </tr>
+        }
     </tbody>
 </table>
-
-<SurveyPrompt Title="How is Blazor working for you?" />
+<form class="input-group input-group-lg navbar-fixed-bottom" @onsubmit="Submit">
+    <input type="text" class="form-control" aria-label="Sizing example input" placeholder="Here to chat with GPT"
+           aria-describedby="inputGroup-sizing-lg" @bind="ChatMessageInput">
+</form>
 @code {
 
 
     private List<ChatMessage> ChatMessage = new List<ChatMessage>();
     private List<ChatMessage> ChatMessageStreaming = new List<ChatMessage>();
+    private bool Loading = false;
+    public string ChatMessageInput { get; set; } = string.Empty;
 
     protected override async Task OnInitializedAsync()
     {
-        ChatMessage = new List<ChatMessage>(){
-new ChatMessage(ChatRole.System, "你是一个翻译机器."),
-new ChatMessage(ChatRole.User, "翻译成英文: 天大地大我最大 "),
-};
-  GetChatCompletions().ConfigureAwait(false);
+        ChatMessage = new List<ChatMessage>()
+        {
+            @* new ChatMessage(ChatRole.System, "你是一个翻译机器."),
+new ChatMessage(ChatRole.User, "翻译成英文: 天大地大我最大 "), *@
+        };
+        GetChatCompletions().ConfigureAwait(false).GetAwaiter();
     }
     private async Task GetChatCompletions()
     {
         var chatCompletionsOptions = new ChatCompletionsOptions();
         ChatMessage.ForEach(chatCompletionsOptions.Messages.Add);
-
+        try
+        {
+            Loading = true;
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine(e.Message);
+        }
+        finally
+        {
+            Loading = false;
+        }
         Response<StreamingChatCompletions> response = await client.GetChatCompletionsStreamingAsync(deploymentOrModelName:
         "gpt-3.5-turbo", chatCompletionsOptions);
         using StreamingChatCompletions streamingChatCompletions = response.Value;
@@ -61,22 +83,23 @@ new ChatMessage(ChatRole.User, "翻译成英文: 天大地大我最大 "),
             await foreach (ChatMessage message in choice.GetMessageStreaming())
             {
                 Console.Write(message.Content);
-                await Task.Delay(100);
+                await Task.Delay(1);
                 ChatMessageStreaming.Add(message);
                 StateHasChanged();
             }
             Console.WriteLine();
         }
-        @* foreach (var item in ChatMessageStreaming.GroupBy(m => m.Role))
-{
-ChatMessage.Add(new ChatMessage(item.Key, string.Join(' ', item.Select(m => m.Content))));
-}
-ChatMessageStreaming.Clear(); *@
+        foreach (var item in ChatMessageStreaming.GroupBy(m => m.Role))
+        {
+            ChatMessage.Add(new ChatMessage(item.Key, string.Join(' ', item.Select(m => m.Content))));
+        }
+        ChatMessageStreaming.Clear();
     }
 
-    protected override Task OnAfterRenderAsync(bool firstRender)
+    public async Task Submit()
     {
-        @* Console.WriteLine("rerendered"); *@
-        return base.OnAfterRenderAsync(firstRender);
+        ChatMessage.Add(new ChatMessage(ChatRole.User, ChatMessageInput));
+        ChatMessageInput = string.Empty;
+        await GetChatCompletions();
     }
 }
