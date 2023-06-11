@@ -5,9 +5,8 @@
 
 <PageTitle>Index</PageTitle>
 
-<h1>Hello, world!</h1>
+<h1>Hello my private ChatGPT</h1>
 
-Welcome to your GPT.
 <table>
     <tbody>
         @foreach (var item in ChatMessage)
@@ -39,7 +38,7 @@ Welcome to your GPT.
 </table>
 <form class="input-group input-group-lg navbar-fixed-bottom" @onsubmit="Submit">
     <input type="text" class="form-control" aria-label="Sizing example input" placeholder="Here to chat with GPT"
-           aria-describedby="inputGroup-sizing-lg" @bind="ChatMessageInput">
+        aria-describedby="inputGroup-sizing-lg" @bind="ChatMessageInput">
 </form>
 @code {
 
@@ -62,9 +61,29 @@ new ChatMessage(ChatRole.User, "翻译成英文: 天大地大我最大 "), *@
     {
         var chatCompletionsOptions = new ChatCompletionsOptions();
         ChatMessage.ForEach(chatCompletionsOptions.Messages.Add);
+        Response<StreamingChatCompletions> response;
         try
         {
+            CancellationTokenSource cancellationTokenSource = new CancellationTokenSource();
             Loading = true;
+            response = await client.GetChatCompletionsStreamingAsync(deploymentOrModelName:
+            "gpt-3.5-turbo", chatCompletionsOptions);
+            using StreamingChatCompletions streamingChatCompletions = response.Value;
+            await foreach (StreamingChatChoice choice in streamingChatCompletions.GetChoicesStreaming())
+            {
+                await foreach (ChatMessage message in choice.GetMessageStreaming())
+                {
+                    Console.Write(message.Content);
+                    await Task.Delay(1);
+                    ChatMessageStreaming.Add(message);
+                    StateHasChanged();
+                }
+                Console.WriteLine();
+            }
+            foreach (var item in ChatMessageStreaming.GroupBy(m => m.Role))
+            {
+                ChatMessage.Add(new ChatMessage(item.Key, string.Join(' ', item.Select(m => m.Content))));
+            }
         }
         catch (Exception e)
         {
@@ -72,32 +91,18 @@ new ChatMessage(ChatRole.User, "翻译成英文: 天大地大我最大 "), *@
         }
         finally
         {
+            ChatMessageStreaming.Clear();
             Loading = false;
         }
-        Response<StreamingChatCompletions> response = await client.GetChatCompletionsStreamingAsync(deploymentOrModelName:
-        "gpt-3.5-turbo", chatCompletionsOptions);
-        using StreamingChatCompletions streamingChatCompletions = response.Value;
 
-        await foreach (StreamingChatChoice choice in streamingChatCompletions.GetChoicesStreaming())
-        {
-            await foreach (ChatMessage message in choice.GetMessageStreaming())
-            {
-                Console.Write(message.Content);
-                await Task.Delay(1);
-                ChatMessageStreaming.Add(message);
-                StateHasChanged();
-            }
-            Console.WriteLine();
-        }
-        foreach (var item in ChatMessageStreaming.GroupBy(m => m.Role))
-        {
-            ChatMessage.Add(new ChatMessage(item.Key, string.Join(' ', item.Select(m => m.Content))));
-        }
-        ChatMessageStreaming.Clear();
     }
 
     public async Task Submit()
     {
+        if (string.IsNullOrEmpty(ChatMessageInput))
+        {
+            return;
+        }
         ChatMessage.Add(new ChatMessage(ChatRole.User, ChatMessageInput));
         ChatMessageInput = string.Empty;
         await GetChatCompletions();
