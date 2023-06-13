@@ -1,5 +1,4 @@
 ﻿@inherits LayoutComponentBase
-@inject IJSRuntime JS
 
 <PageTitle>Miaocrosoft.GPT</PageTitle>
 
@@ -10,10 +9,7 @@
 
     <main>
         <div class="top-row px-4">
-            @if (ReadyToInstall)
-            {
-                <a @onclick="InstallApp" target="_blank">安装到桌面</a>
-            }
+            <a href="#" target="_blank">About</a>
         </div>
 
         <article class="content px-4">
@@ -21,17 +17,3 @@
         </article>
     </main>
 </div>
-@code {
-    bool ReadyToInstall = false;
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        ReadyToInstall = await JS.InvokeAsync<bool>("installer.installedOrUnsupported");
-        StateHasChanged();
-        await base.OnInitializedAsync();
-    }
-
-    public async Task InstallApp()
-    {
-        await JS.InvokeVoidAsync("installer.installPrompt");
-    }
-}
