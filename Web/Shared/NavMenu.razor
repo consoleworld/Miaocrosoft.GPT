@@ -1,4 +1,6 @@
-﻿@inject IJSRuntime JS
+﻿@using Azure.AI.OpenAI
+@inject IJSRuntime JS
+@inject Miaocrosoft.GPT.Data.ChatHistoryStorage chatHistoryStorage;
 
 <div class="top-row ps-3 navbar navbar-dark">
     <div class="container-fluid">
@@ -13,21 +15,22 @@
 
 <div class="@NavMenuCssClass nav-scrollable" @onclick="ToggleNavMenu">
     <nav class="flex-column">
+        @if (chatMessages != null)
+        {
+            @foreach (var item in chatMessages)
+            {
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" @onclick="()=>SetCurrent(item)">
+                        <span class="oi oi-home" aria-hidden="true"></span> @item?.FirstOrDefault()?.Content
+                    </NavLink>
+                </div>
+            }
+        }
         <div class="nav-item px-3">
-            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
-                <span class="oi oi-home" aria-hidden="true"></span> Home
+            <NavLink class="nav-link" @onclick="AddNew">
+                <span class="oi oi-home" aria-hidden="true"></span> Add new chat
             </NavLink>
         </div>
-        @* <div class="nav-item px-3">
-        <NavLink class="nav-link" href="counter">
-        <span class="oi oi-plus" aria-hidden="true"></span> Counter
-        </NavLink>
-        </div>
-        <div class="nav-item px-3">
-        <NavLink class="nav-link" href="fetchdata">
-        <span class="oi oi-list-rich" aria-hidden="true"></span> Fetch data
-        </NavLink>
-        </div> *@
     </nav>
 </div>
 
@@ -35,16 +38,41 @@
     private bool collapseNavMenu = true;
     private bool? ReadyToInstall = null;
     private string? NavMenuCssClass => collapseNavMenu ? "collapse" : null;
+    List<List<ChatMessage>> chatMessages = null;
+
 
     private void ToggleNavMenu()
     {
         collapseNavMenu = !collapseNavMenu;
     }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+    }
+
+    private async Task SetCurrent(List<ChatMessage> item)
+    {
+        await chatHistoryStorage.SetCurrent(item);
+        StateHasChanged();
+    }
+
+    private async Task AddNew()
+    {
+        await chatHistoryStorage.AddNew();
+        StateHasChanged();
+    }
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!ReadyToInstall.HasValue)
+        if (firstRender)
         {
-            ReadyToInstall = await JS.InvokeAsync<bool>("installer.installedOrUnsupported");
+            if (!ReadyToInstall.HasValue)
+            {
+                ReadyToInstall = await JS.InvokeAsync<bool>("installer.installedOrUnsupported");
+            }
+            await chatHistoryStorage.LoadHistory();
+            chatMessages = await chatHistoryStorage.GetAll();
             StateHasChanged();
         }
         await base.OnInitializedAsync();

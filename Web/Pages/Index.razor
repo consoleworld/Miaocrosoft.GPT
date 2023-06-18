@@ -2,28 +2,33 @@
 @using Azure.AI.OpenAI;
 @using Azure;
 @inject OpenAIClient client;
+@inject Miaocrosoft.GPT.Data.ChatHistoryStorage chatHistoryStorage;
 
-<PageTitle>Index</PageTitle>
+<PageTitle>@Current?.FirstOrDefault()?.Content</PageTitle>
 
 <h1>Hello my private ChatGPT</h1>
 
 <table>
     <tbody>
-        @foreach (var item in ChatMessage)
+        @if (Current != null)
         {
-            <tr>
-                <td>@item.Role:</td>
-                <td>@item.Content</td>
-            </tr>
+
+            @foreach (var item in Current)
+            {
+                <tr>
+                    <td class="align-top">@item.Role:</td>
+                    <td>@((MarkupString)item.Content?.Replace(Environment.NewLine, "<br/>"))</td>
+                </tr>
+            }
         }
-        @foreach (var item in ChatMessageStreaming)
+        @if (ChatMessageStreaming.Any())
         {
             <tr>
-                <td>@item?.FirstOrDefault()?.Role</td>
+                <td class="align-top">@ChatMessageStreaming.FirstOrDefault()?.Role:</td>
                 <td>
-                    @foreach (var item1 in item)
+                    @foreach (var item in ChatMessageStreaming)
                     {
-                        @item1.Content
+                        @((MarkupString)item.Content?.Replace(Environment.NewLine, "<br/>"))
                     }
                 </td>
             </tr>
@@ -41,26 +46,26 @@
         aria-describedby="inputGroup-sizing-lg" @bind="ChatMessageInput">
 </form>
 @code {
+    protected List<ChatMessage> Current { get; set; }
 
-
-    private List<ChatMessage> ChatMessage = new List<ChatMessage>();
-    private List<List<ChatMessage>> ChatMessageStreaming = new List<List<ChatMessage>>();
+    private List<ChatMessage> ChatMessageStreaming = new List<ChatMessage>();
     private bool Loading = false;
     public string ChatMessageInput { get; set; } = string.Empty;
 
-    protected override async Task OnInitializedAsync()
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        ChatMessage = new List<ChatMessage>()
+        if (firstRender)
         {
-            @* new ChatMessage(ChatRole.System, "你是一个翻译机器."),
-new ChatMessage(ChatRole.User, "翻译成英文: 天大地大我最大 "), *@
-        };
-        GetChatCompletions().ConfigureAwait(false).GetAwaiter();
+            await chatHistoryStorage.LoadHistory();
+            Current = await chatHistoryStorage.GetCurrent();
+            StateHasChanged();
+        }
     }
+
     private async Task GetChatCompletions()
     {
         var chatCompletionsOptions = new ChatCompletionsOptions();
-        ChatMessage.ForEach(chatCompletionsOptions.Messages.Add);
+        Current.ForEach(chatCompletionsOptions.Messages.Add);
         Response<StreamingChatCompletions> response;
         try
         {
@@ -71,21 +76,21 @@ new ChatMessage(ChatRole.User, "翻译成英文: 天大地大我最大 "), *@
             using StreamingChatCompletions streamingChatCompletions = response.Value;
             await foreach (StreamingChatChoice choice in streamingChatCompletions.GetChoicesStreaming())
             {
-                ChatMessageStreaming.Add(new List<ChatMessage>());
                 await foreach (ChatMessage message in choice.GetMessageStreaming())
                 {
                     Console.Write(message.Content);
                     await Task.Delay(1);
-                    ChatMessageStreaming.Last().Add(message);
+                    ChatMessageStreaming.Add(message);
                     StateHasChanged();
                 }
-                Console.WriteLine();
-            }
-            foreach (var item in ChatMessageStreaming)
-            {
-                IEnumerable<ChatMessage> message = item.GroupBy(m => m.Role).Select(m => new ChatMessage(m.Key, string.Join(' ',
-                m.Select(m => m.Content))));
-                ChatMessage.AddRange(message);
+
+                if (ChatMessageStreaming.Any())
+                {
+                    Current.Add(new ChatMessage(ChatMessageStreaming.First().Role, string.Join(string.Empty, ChatMessageStreaming.Select(m
+                    => m.Content))));
+                    ChatMessageStreaming.Clear();
+                    StateHasChanged();
+                }
             }
         }
         catch (Exception e)
@@ -94,7 +99,6 @@ new ChatMessage(ChatRole.User, "翻译成英文: 天大地大我最大 "), *@
         }
         finally
         {
-            ChatMessageStreaming.Clear();
             Loading = false;
             StateHasChanged();
         }
@@ -106,8 +110,9 @@ new ChatMessage(ChatRole.User, "翻译成英文: 天大地大我最大 "), *@
         {
             return;
         }
-        ChatMessage.Add(new ChatMessage(ChatRole.User, ChatMessageInput));
+        Current.Add(new ChatMessage(ChatRole.User, ChatMessageInput));
         ChatMessageInput = string.Empty;
         await GetChatCompletions();
+        await chatHistoryStorage.SaveChangeOnCurrentAsync();
     }
 }

@@ -6,7 +6,7 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 builder.Services.AddRazorPages();
 builder.Services.AddServerSideBlazor();
-builder.Services.AddSingleton<WeatherForecastService>();
+builder.Services.AddScoped<ChatHistoryStorage>();
 
 string nonAzureOpenAIApiKey = builder.Configuration.GetValue(typeof(string), "api-key-from-platform.openai.com")?.ToString() ?? throw new ArgumentNullException("api-key-from-platform.openai.com");
 builder.Services.AddSingleton(new OpenAIClient(nonAzureOpenAIApiKey, new OpenAIClientOptions()));
