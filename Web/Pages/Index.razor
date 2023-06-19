@@ -1,8 +1,10 @@
 ﻿@page "/"
 @using Azure.AI.OpenAI;
 @using Azure;
+@using Miaocrosoft.GPT.Data;
 @inject OpenAIClient client;
 @inject Miaocrosoft.GPT.Data.ChatHistoryStorage chatHistoryStorage;
+@inject NavigationManager Navigation;
 
 <PageTitle>@Current?.FirstOrDefault()?.Content</PageTitle>
 
@@ -46,26 +48,43 @@
         aria-describedby="inputGroup-sizing-lg" @bind="ChatMessageInput">
 </form>
 @code {
-    protected List<ChatMessage> Current { get; set; }
-
+    protected List<ChatMessageDTO> Current { get; set; }
     private List<ChatMessage> ChatMessageStreaming = new List<ChatMessage>();
     private bool Loading = false;
     public string ChatMessageInput { get; set; } = string.Empty;
-
+    bool newChat = false;
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
-            await chatHistoryStorage.LoadHistory();
-            Current = await chatHistoryStorage.GetCurrent();
-            StateHasChanged();
+            Navigation.LocationChanged += HandleLocationChanged;
+            HandleLocationChanged(null, null);
         }
+    }
+
+    private async void HandleLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        await chatHistoryStorage.LoadHistory();
+        Current = await chatHistoryStorage.GetCurrent();
+        if (Current == null)
+        {
+            newChat = true;
+            Current = new List<ChatMessageDTO>();
+        }
+        else
+        {
+            newChat = false;
+        }
+        StateHasChanged();
     }
 
     private async Task GetChatCompletions()
     {
         var chatCompletionsOptions = new ChatCompletionsOptions();
-        Current.ForEach(chatCompletionsOptions.Messages.Add);
+        Current.ForEach(m =>
+        {
+            chatCompletionsOptions.Messages.Add(new ChatMessage(ChatRole.User, m.Content));
+        });
         Response<StreamingChatCompletions> response;
         try
         {
@@ -86,8 +105,11 @@
 
                 if (ChatMessageStreaming.Any())
                 {
-                    Current.Add(new ChatMessage(ChatMessageStreaming.First().Role, string.Join(string.Empty, ChatMessageStreaming.Select(m
-                    => m.Content))));
+                    Current.Add(new ChatMessageDTO
+                        {
+                            Role = ChatMessageStreaming.First().Role.Label,
+                            Content = string.Join(string.Empty, ChatMessageStreaming.Select(m => m.Content))
+                        });
                     ChatMessageStreaming.Clear();
                     StateHasChanged();
                 }
@@ -96,6 +118,7 @@
         catch (Exception e)
         {
             Console.WriteLine(e.Message);
+            Current.Add(new ChatMessageDTO { Content = e.Message });
         }
         finally
         {
@@ -110,9 +133,20 @@
         {
             return;
         }
-        Current.Add(new ChatMessage(ChatRole.User, ChatMessageInput));
+
+        Current.Add(new ChatMessageDTO { Role = ChatRole.User.Label, Content = ChatMessageInput });
+        if (newChat)
+        {
+            await chatHistoryStorage.AddNew(Current);
+            newChat = false;
+        }
         ChatMessageInput = string.Empty;
         await GetChatCompletions();
         await chatHistoryStorage.SaveChangeOnCurrentAsync();
+    }
+
+    public void Dispose()
+    {
+        Navigation.LocationChanged -= HandleLocationChanged;
     }
 }

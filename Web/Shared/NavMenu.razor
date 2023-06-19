@@ -1,6 +1,7 @@
-﻿@using Azure.AI.OpenAI
+﻿@using Miaocrosoft.GPT.Data;
 @inject IJSRuntime JS
 @inject Miaocrosoft.GPT.Data.ChatHistoryStorage chatHistoryStorage;
+@inject NavigationManager Navigation
 
 <div class="top-row ps-3 navbar navbar-dark">
     <div class="container-fluid">
@@ -8,8 +9,10 @@
         <button title="Navigation menu" class="navbar-toggler" @onclick="ToggleNavMenu">
             <span class="navbar-toggler-icon"></span>
         </button>
-        <a class="nav-link navbar-brand navbar-toggler" href="#" @onclick="InstallApp">添加到桌面</a>
-        @* <button type="button" @onclick="InstallApp" class="btn btn-light navbar-toggler">添加到桌面</button> *@
+        @if (ReadyToInstall.HasValue&&ReadyToInstall.Value)
+        {
+            <a class="nav-link navbar-brand navbar-toggler" href="#" @onclick="InstallApp">添加到桌面</a>
+        }
     </div>
 </div>
 
@@ -17,15 +20,23 @@
     <nav class="flex-column">
         @if (chatMessages != null)
         {
-            @foreach (var item in chatMessages)
+            foreach (var item in chatMessages)
             {
                 <div class="nav-item px-3">
                     <NavLink class="nav-link" @onclick="()=>SetCurrent(item)">
-                        <span class="oi oi-home" aria-hidden="true"></span> @item?.FirstOrDefault()?.Content
+                        @item.FirstOrDefault()?.Content
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-trash align-right"
+                        @onclick:stopPropagation="true" @onclick="()=>Delete(item)" viewBox="0 0 16 16">
+                            <path
+                                d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5Zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5Zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6Z" />
+                            <path
+                                d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1ZM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118ZM2.5 3h11V2h-11v1Z" />
+                        </svg>
                     </NavLink>
                 </div>
             }
         }
+
         <div class="nav-item px-3">
             <NavLink class="nav-link" @onclick="AddNew">
                 <span class="oi oi-home" aria-hidden="true"></span> Add new chat
@@ -38,8 +49,7 @@
     private bool collapseNavMenu = true;
     private bool? ReadyToInstall = null;
     private string? NavMenuCssClass => collapseNavMenu ? "collapse" : null;
-    List<List<ChatMessage>> chatMessages = null;
-
+    List<List<ChatMessageDTO>> chatMessages = null;
 
     private void ToggleNavMenu()
     {
@@ -51,16 +61,26 @@
         await base.OnInitializedAsync();
     }
 
-    private async Task SetCurrent(List<ChatMessage> item)
+    private async Task SetCurrent(List<ChatMessageDTO>? item)
     {
         await chatHistoryStorage.SetCurrent(item);
         StateHasChanged();
+        Navigation.NavigateTo(Navigation.GetUriWithQueryParameters(new Dictionary<string, object?>
+            {
+                ["r"] = DateTime.Now.Ticks
+            }));
     }
 
-    private async Task AddNew()
+    private async void AddNew()
     {
-        await chatHistoryStorage.AddNew();
-        StateHasChanged();
+        await chatHistoryStorage.SetCurrent(null);
+        Navigation.NavigateTo("/");
+    }
+
+    private async void Delete(List<ChatMessageDTO> item)
+    {
+        await chatHistoryStorage.Delete(item);
+        await SetCurrent(null);
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)

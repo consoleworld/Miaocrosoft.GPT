@@ -8,7 +8,7 @@ public class ChatHistoryStorage
     const string CHAT_HISTORY_STORAGE = "ChatHistoryStorage";
     ProtectedLocalStorage _protectedSessionStore;
     ChatHistory _chatHistory;
-    int _current;
+    int? _current;
 
     public ChatHistoryStorage(ProtectedLocalStorage protectedSessionStore)
     {
@@ -17,45 +17,82 @@ public class ChatHistoryStorage
 
     public async Task LoadHistory()
     {
-        var result = await _protectedSessionStore.GetAsync<ChatHistory>(CHAT_HISTORY_STORAGE);
-        if (!result.Success || result.Value == null)
+        if (_chatHistory != null)
+        {
+            return;
+        }
+        ProtectedBrowserStorageResult<ChatHistory> result;
+        try
+        {
+            result = await _protectedSessionStore.GetAsync<ChatHistory>(CHAT_HISTORY_STORAGE);
+            if (!result.Success || result.Value == null)
+            {
+                throw new Exception($"Read storage {CHAT_HISTORY_STORAGE} failed");
+            }
+            else
+            {
+                _chatHistory = result.Value;
+            }
+        }
+        catch (System.Exception)
         {
             _chatHistory = new ChatHistory();
-            this.AddNew();
-        }
-        else
-        {
-            _chatHistory = result.Value;
         }
     }
 
-    public async Task<List<List<ChatMessage>>> GetAll()
+    public async Task<List<List<ChatMessageDTO>>> GetAll()
     {
         return _chatHistory.History;
     }
 
-    public async Task<List<ChatMessage>> SetCurrent(List<ChatMessage> title = null)
+    public async Task<List<ChatMessageDTO>?> SetCurrent(List<ChatMessageDTO>? target)
     {
-        if (title == null)
+        if (target == null)
         {
-            _current = 0;
-            return _chatHistory.History.FirstOrDefault();
+            _current = null;
         }
         else
         {
-            return _chatHistory.History.FirstOrDefault(m => m == title);
+            _current = _chatHistory.History.IndexOf(target);
+            if (_current == -1)
+            {
+                _current = _chatHistory.History.Any() ? 0 : null;
+            }
+        }
+        if (_current.HasValue)
+        {
+            return _chatHistory.History[_current.Value];
+        }
+        else
+        {
+            return null;
         }
     }
 
-    public async Task<List<ChatMessage>> GetCurrent()
+    public async Task<List<ChatMessageDTO>> GetCurrent()
     {
-        return _chatHistory.History[_current];
+        if (_chatHistory.History.Any() && _current.HasValue)
+        {
+            return _chatHistory.History[_current.Value];
+        }
+        else
+        {
+            return null;
+        }
     }
 
-    public async Task<List<ChatMessage>> AddNew()
+    public async Task<List<ChatMessageDTO>> AddNew(List<ChatMessageDTO> chat)
     {
-        _chatHistory.History.Insert(0, new List<ChatMessage>());
-        return await this.SetCurrent();
+        _chatHistory.History.Insert(0, chat);
+        return await this.SetCurrent(null);
+    }
+
+    public async Task<List<ChatMessageDTO>> Delete(List<ChatMessageDTO> chat)
+    {
+        var current = await this.GetCurrent();
+        _chatHistory.History.Remove(chat);
+        await this.SaveChangeOnCurrentAsync();
+        return await this.SetCurrent(current);
     }
 
     public async Task SaveChangeOnCurrentAsync()
