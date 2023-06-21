@@ -1,39 +1,140 @@
-﻿<div class="top-row ps-3 navbar navbar-dark">
+﻿@implements IDisposable
+@using Miaocrosoft.GPT.Data;
+@inject IJSRuntime JS
+@inject Miaocrosoft.GPT.Data.ChatHistoryStorage chatHistoryStorage;
+@inject NavigationManager Navigation
+@inject Miaocrosoft.GPT.Data.OpenAIStorage openAIStorage;
+
+<div class="top-row ps-3 navbar navbar-dark">
     <div class="container-fluid">
-        <a class="navbar-brand" href="">Miaocrosoft.GPT</a>
+        <a class="navbar-brand collapse" href="">Miaocrosoft.GPT</a>
         <button title="Navigation menu" class="navbar-toggler" @onclick="ToggleNavMenu">
             <span class="navbar-toggler-icon"></span>
         </button>
+        @if (ReadyToInstall.HasValue && ReadyToInstall.Value)
+        {
+            <a class="nav-link navbar-brand navbar-toggler" href="#" @onclick="InstallApp">添加到桌面</a>
+        }
     </div>
 </div>
 
 <div class="@NavMenuCssClass nav-scrollable" @onclick="ToggleNavMenu">
     <nav class="flex-column">
+        @if (chatMessages != null)
+        {
+            foreach (var item in chatMessages)
+            {
+                @* string Css = (item == chatHistoryStorage.GetCurrent().Result) ? "active" : ""; *@
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" @onclick="()=>SetCurrent(item)">
+                        <span class="text-truncate">
+                            @item.FirstOrDefault()?.Content
+                        </span>
+                        &nbsp;
+                        <span class="oi oi-trash" aria-hidden="true" @onclick:stopPropagation
+                        @onclick="()=>Delete(item)"></span>
+                    </NavLink>
+                </div>
+            }
+        }
+
         <div class="nav-item px-3">
-            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
-                <span class="oi oi-home" aria-hidden="true"></span> Home
+            <NavLink class="nav-link" @onclick="AddNew">
+                <span class="oi oi-plus" aria-hidden="true"></span> Add new conversation
             </NavLink>
         </div>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="counter">
-                <span class="oi oi-plus" aria-hidden="true"></span> Counter
-            </NavLink>
-        </div>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="fetchdata">
-                <span class="oi oi-list-rich" aria-hidden="true"></span> Fetch data
-            </NavLink>
+    </nav>
+
+    <nav class="navbar navbar-dark bg-dark">
+        <div class="container-fluid">
+            @if (Setting)
+            {
+                <form class="d-flex col" @onsubmit="OnSubmit">
+                    <input class="form-control me-2" type="text" @bind="Token" placeholder="Set token here"
+                    @onclick:stopPropagation aria-label="OpenAIToken">
+                    <button class="btn btn-outline-success" type="submit">Set Token</button>
+                </form>
+            }
+            else
+            {
+                <span class="nav-link" @onclick="SetToken" @onclick:stopPropagation>
+                    <span class="oi oi-key" aria-hidden="true"></span> Set OpenAI Token
+                </span>
+            }
         </div>
     </nav>
 </div>
 
 @code {
     private bool collapseNavMenu = true;
-
+    private bool? ReadyToInstall = null;
     private string? NavMenuCssClass => collapseNavMenu ? "collapse" : null;
+    List<List<ChatMessageDTO>>? chatMessages;
+    bool Setting = false;
+    string? Token;
+
+    async void OnSubmit()
+    {
+        await openAIStorage.SetToken(Token);
+        Setting = false;
+        StateHasChanged();
+    }
+
+    void SetToken()
+    {
+        Setting = true;
+        StateHasChanged();
+    }
+
+    protected override void OnInitialized()
+    {
+        chatHistoryStorage.OnChange += StateHasChanged;
+    }
 
     private void ToggleNavMenu()
     {
         collapseNavMenu = !collapseNavMenu;
+    }
+
+    private async Task SetCurrent(List<ChatMessageDTO>? item)
+    {
+        await chatHistoryStorage.SetCurrent(item);
+    }
+
+    private async void AddNew()
+    {
+        await SetCurrent(null);
+    }
+
+    private async void Delete(List<ChatMessageDTO> item)
+    {
+        await chatHistoryStorage.Delete(item);
+        await SetCurrent(null);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            if (!ReadyToInstall.HasValue)
+            {
+                ReadyToInstall = await JS.InvokeAsync<bool>("installer.installedOrUnsupported");
+            }
+            await chatHistoryStorage.LoadHistory();
+            chatMessages = await chatHistoryStorage.GetAll();
+            StateHasChanged();
+            Token = await openAIStorage.GetToken();
+        }
+        await base.OnInitializedAsync();
+    }
+
+    public async Task InstallApp()
+    {
+        await JS.InvokeVoidAsync("installer.installPrompt");
+    }
+
+    public void Dispose()
+    {
+        chatHistoryStorage.OnChange -= StateHasChanged;
     }
 }

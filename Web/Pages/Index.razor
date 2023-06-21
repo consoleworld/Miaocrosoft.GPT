@@ -1,64 +1,173 @@
 ﻿@page "/"
+@implements IDisposable
 @using Azure.AI.OpenAI;
 @using Azure;
-@inject OpenAIClient client;
+@using Miaocrosoft.GPT.Data;
+@inject OpenAIStorage openAIStorage;
+@inject Miaocrosoft.GPT.Data.ChatHistoryStorage chatHistoryStorage;
+@inject NavigationManager Navigation;
 
-<PageTitle>Index</PageTitle>
+<PageTitle>@Current?.FirstOrDefault()?.Content</PageTitle>
 
-<h1>Hello, world!</h1>
+<h1>@Message</h1>
 
-Welcome to your new app.
 <table>
     <tbody>
-        @if (ChatMessage != null)
+        @if (Current != null)
         {
-            @foreach (var item in ChatMessage)
+
+            @foreach (var item in Current)
             {
                 <tr>
-                    <td>@item.Role:</td>
-                    <td>@item.Content</td>
+                    <td class="align-top">@item.Role:</td>
+                    <td>@((MarkupString)item.Content?.Replace(Environment.NewLine, "<br/>"))</td>
                 </tr>
             }
         }
+        @if (ChatMessageStreaming.Any())
+        {
+            <tr>
+                <td class="align-top">@ChatMessageStreaming.FirstOrDefault()?.Role:</td>
+                <td>
+                    @foreach (var item in ChatMessageStreaming)
+                    {
+                        @((MarkupString)item.Content?.Replace(Environment.NewLine, "<br/>"))
+                    }
+                </td>
+            </tr>
+        }
+        @if (Loading)
+        {
+            <tr>
+                <td colspan="2">Loading...</td>
+            </tr>
+        }
     </tbody>
 </table>
-
-<SurveyPrompt Title="How is Blazor working for you?" />
+<form class="input-group input-group-lg navbar-fixed-bottom" @onsubmit="Submit">
+    <input type="text" class="form-control" aria-label="Sizing example input" placeholder="Here to chat with GPT"
+        aria-describedby="inputGroup-sizing-lg" @bind="ChatMessageInput">
+</form>
 @code {
-
-
-    private ChatMessage[]? ChatMessage;
-
-    protected override async Task OnInitializedAsync()
+    protected List<ChatMessageDTO>? Current { get; set; }
+    private List<ChatMessage> ChatMessageStreaming = new List<ChatMessage>();
+    private bool Loading = false;
+    private string? Message;
+    public string ChatMessageInput { get; set; } = string.Empty;
+    bool newChat = false;
+    protected override void OnInitialized()
     {
-        ChatMessage = await GetChatCompletions();
+        chatHistoryStorage.OnChange += OnChange;
+        OnChange();
     }
-    private async Task<ChatMessage[]> GetChatCompletions()
+
+    private async void OnChange()
     {
-        var chatCompletionsOptions = new ChatCompletionsOptions()
-            {
-                Messages ={
-new ChatMessage(ChatRole.System, "You are a helpful assistant. You will talk like a pirate."),
-new ChatMessage(ChatRole.User, "Can you help me?"),
-new ChatMessage(ChatRole.Assistant, "Arrrr! Of course, me hearty! What can I do for ye?"),
-new ChatMessage(ChatRole.User, "What's the best way to train a parrot?"),
-}
-            };
-
-        Response<StreamingChatCompletions> response = await client.GetChatCompletionsStreamingAsync(deploymentOrModelName:
-        "gpt-3.5-turbo", chatCompletionsOptions);
-        using StreamingChatCompletions streamingChatCompletions = response.Value;
-
-        List<ChatMessage> messages = new List<ChatMessage>();
-        await foreach (StreamingChatChoice choice in streamingChatCompletions.GetChoicesStreaming())
+        await chatHistoryStorage.LoadHistory();
+        Current = await chatHistoryStorage.GetCurrent();
+        if (Current == null)
         {
-            await foreach (ChatMessage message in choice.GetMessageStreaming())
-            {
-                messages.Add(message);
-                Console.Write(message.Content);
-            }
-            Console.WriteLine();
+            newChat = true;
+            Current = new List<ChatMessageDTO>();
+            Message = "New Conversation";
         }
-        return messages.ToArray();
+        else
+        {
+            newChat = false;
+        }
+        StateHasChanged();
+    }
+
+    private async Task GetChatCompletions(OpenAIClient openAIClient)
+    {
+        if (Current == null)
+        {
+            throw new ArgumentNullException(nameof(Current));
+        }
+
+        var chatCompletionsOptions = new ChatCompletionsOptions();
+        Current.ForEach(m =>
+        {
+            chatCompletionsOptions.Messages.Add(new ChatMessage(ChatRole.User, m.Content));
+        });
+        Response<StreamingChatCompletions> response;
+        try
+        {
+            CancellationTokenSource cancellationTokenSource = new CancellationTokenSource();
+            Loading = true;
+            response = await openAIClient.GetChatCompletionsStreamingAsync(deploymentOrModelName:
+            "gpt-3.5-turbo", chatCompletionsOptions);
+            using StreamingChatCompletions streamingChatCompletions = response.Value;
+            await foreach (StreamingChatChoice choice in streamingChatCompletions.GetChoicesStreaming())
+            {
+                await foreach (ChatMessage message in choice.GetMessageStreaming())
+                {
+                    Console.Write(message.Content);
+                    await Task.Delay(1);
+                    ChatMessageStreaming.Add(message);
+                    StateHasChanged();
+                }
+
+                if (ChatMessageStreaming.Any())
+                {
+                    Current.Add(new ChatMessageDTO
+                        {
+                            Role = ChatMessageStreaming.First().Role.Label,
+                            Content = string.Join(string.Empty, ChatMessageStreaming.Select(m => m.Content))
+                        });
+                    ChatMessageStreaming.Clear();
+                    StateHasChanged();
+                }
+            }
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine(e.Message);
+            this.Message = e.Message;
+            throw e;
+        }
+        finally
+        {
+            Loading = false;
+            StateHasChanged();
+        }
+    }
+
+    public async Task Submit()
+    {
+        if (Current == null)
+        {
+            throw new ArgumentNullException(nameof(Current));
+        }
+
+        OpenAIClient openAIClient = await openAIStorage?.GetClient();
+        if (openAIClient == null)
+        {
+            this.Message = "Please config token before using GPT bridge application";
+            return;
+        }
+
+        if (string.IsNullOrEmpty(ChatMessageInput))
+        {
+            this.Message = "Input message cannot be empty";
+            return;
+        }
+
+        this.Message = string.Empty;
+        Current.Add(new ChatMessageDTO { Role = ChatRole.User.Label, Content = ChatMessageInput });
+        if (newChat)
+        {
+            await chatHistoryStorage.AddNew(Current);
+            newChat = false;
+        }
+        ChatMessageInput = string.Empty;
+        StateHasChanged();
+        await GetChatCompletions(openAIClient);
+        await chatHistoryStorage.SaveChangeOnCurrentAsync();
+    }
+
+    public void Dispose()
+    {
+        chatHistoryStorage.OnChange -= OnChange;
     }
 }
