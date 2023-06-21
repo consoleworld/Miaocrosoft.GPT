@@ -7,9 +7,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRazorPages();
 builder.Services.AddServerSideBlazor();
 builder.Services.AddScoped<ChatHistoryStorage>();
-
-string nonAzureOpenAIApiKey = builder.Configuration.GetValue(typeof(string), "api-key-from-platform.openai.com")?.ToString() ?? throw new ArgumentNullException("api-key-from-platform.openai.com");
-builder.Services.AddSingleton(new OpenAIClient(nonAzureOpenAIApiKey, new OpenAIClientOptions()));
+builder.Services.AddScoped<OpenAIStorage>();
 
 var app = builder.Build();
 

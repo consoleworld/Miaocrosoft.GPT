@@ -9,7 +9,7 @@ public class ChatHistory
 
 public class ChatMessageDTO
 {
-    public string Role { get; set; }
-    public string Content { get; set; }
+    public string? Role { get; set; }
+    public string? Content { get; set; }
     public ChatMessage ToChatMessage() => new ChatMessage(Role, Content);    
 }

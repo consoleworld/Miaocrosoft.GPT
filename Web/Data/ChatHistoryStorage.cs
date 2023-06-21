@@ -38,10 +38,19 @@ public class ChatHistoryStorage
         {
             _chatHistory = new ChatHistory();
         }
+        finally
+        {
+            this.OnChange?.Invoke();
+        }
     }
 
     public async Task<List<List<ChatMessageDTO>>> GetAll()
     {
+        if (_chatHistory?.History == null)
+        {
+            throw new ArgumentNullException(nameof(_chatHistory.History));
+        }
+        await Task.Yield();
         return _chatHistory.History;
     }
 
@@ -59,6 +68,9 @@ public class ChatHistoryStorage
                 _current = _chatHistory.History.Any() ? 0 : null;
             }
         }
+
+        this.OnChange?.Invoke();
+
         if (_current.HasValue)
         {
             return _chatHistory.History[_current.Value];
@@ -69,8 +81,9 @@ public class ChatHistoryStorage
         }
     }
 
-    public async Task<List<ChatMessageDTO>> GetCurrent()
+    public async Task<List<ChatMessageDTO>?> GetCurrent()
     {
+        await Task.Yield();
         if (_chatHistory.History.Any() && _current.HasValue)
         {
             return _chatHistory.History[_current.Value];
@@ -81,10 +94,12 @@ public class ChatHistoryStorage
         }
     }
 
-    public async Task<List<ChatMessageDTO>> AddNew(List<ChatMessageDTO> chat)
+    public async Task<List<ChatMessageDTO>?> AddNew(List<ChatMessageDTO> chat)
     {
         _chatHistory.History.Insert(0, chat);
-        return await this.SetCurrent(null);
+        await SetCurrent(chat);
+        this.OnChange?.Invoke();
+        return await this.GetCurrent();
     }
 
     public async Task<List<ChatMessageDTO>> Delete(List<ChatMessageDTO> chat)
@@ -92,11 +107,18 @@ public class ChatHistoryStorage
         var current = await this.GetCurrent();
         _chatHistory.History.Remove(chat);
         await this.SaveChangeOnCurrentAsync();
-        return await this.SetCurrent(current);
+        await this.SetCurrent(current);
+        this.OnChange?.Invoke();
+        return await GetCurrent();
     }
 
     public async Task SaveChangeOnCurrentAsync()
     {
         await _protectedSessionStore.SetAsync(CHAT_HISTORY_STORAGE, _chatHistory);
     }
+
+    public event Action? OnChange;
+
+    private void NotifyStateChanged() => OnChange?.Invoke();
 }
+
