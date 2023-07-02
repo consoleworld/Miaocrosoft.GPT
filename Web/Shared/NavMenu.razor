@@ -7,10 +7,11 @@
 
 <div class="top-row ps-3 navbar navbar-dark">
     <div class="container-fluid">
-        <a class="navbar-brand collapse" href="">Miaocrosoft.GPT</a>
+        <a class="navbar-brand collapse" href="">ChatBot</a>
         <button title="Navigation menu" class="navbar-toggler" @onclick="ToggleNavMenu">
             <span class="navbar-toggler-icon"></span>
         </button>
+        <a class="navbar-toggler" href="https://privacy.microsoft.com/privacystatement" target="_blank">Privacy</a>
         @if (ReadyToInstall.HasValue && ReadyToInstall.Value)
         {
             <a class="nav-link navbar-brand navbar-toggler" href="#" @onclick="InstallApp">添加到桌面</a>
@@ -21,8 +22,11 @@
 <div class="@NavMenuCssClass nav-scrollable" @onclick="ToggleNavMenu">
     <nav class="flex-column">
         @if (chatMessages != null)
+
         {
+
             foreach (var item in chatMessages)
+
             {
                 @* string Css = (item == chatHistoryStorage.GetCurrent().Result) ? "active" : ""; *@
                 <div class="nav-item px-3">
@@ -36,6 +40,7 @@
                     </NavLink>
                 </div>
             }
+
         }
 
         <div class="nav-item px-3">
@@ -67,74 +72,144 @@
 
 @code {
     private bool collapseNavMenu = true;
+
     private bool? ReadyToInstall = null;
+
     private string? NavMenuCssClass => collapseNavMenu ? "collapse" : null;
+
     List<List<ChatMessageDTO>>? chatMessages;
+
     bool Setting = false;
+
     string? Token;
 
+
+
     async void OnSubmit()
+
     {
+
         await openAIStorage.SetToken(Token);
+
         Setting = false;
+
         StateHasChanged();
+
     }
+
+
 
     void SetToken()
+
     {
+
         Setting = true;
+
         StateHasChanged();
+
     }
+
+
 
     protected override void OnInitialized()
+
     {
+
         chatHistoryStorage.OnChange += StateHasChanged;
+
     }
+
+
 
     private void ToggleNavMenu()
+
     {
+
         collapseNavMenu = !collapseNavMenu;
+
     }
+
+
 
     private async Task SetCurrent(List<ChatMessageDTO>? item)
+
     {
+
         await chatHistoryStorage.SetCurrent(item);
+
     }
+
+
 
     private async void AddNew()
+
     {
+
         await SetCurrent(null);
+
     }
+
+
 
     private async void Delete(List<ChatMessageDTO> item)
+
     {
+
         await chatHistoryStorage.Delete(item);
+
         await SetCurrent(null);
+
     }
+
+
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
+
     {
+
         if (firstRender)
+
         {
+
             if (!ReadyToInstall.HasValue)
+
             {
+
                 ReadyToInstall = await JS.InvokeAsync<bool>("installer.installedOrUnsupported");
+
             }
+
             await chatHistoryStorage.LoadHistory();
+
             chatMessages = await chatHistoryStorage.GetAll();
+
             StateHasChanged();
+
             Token = await openAIStorage.GetToken();
+
         }
+
         await base.OnInitializedAsync();
+
     }
+
+
 
     public async Task InstallApp()
+
     {
+
         await JS.InvokeVoidAsync("installer.installPrompt");
+
     }
 
+
+
     public void Dispose()
+
     {
+
         chatHistoryStorage.OnChange -= StateHasChanged;
+
     }
 }
